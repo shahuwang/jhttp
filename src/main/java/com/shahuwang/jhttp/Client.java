@@ -3,10 +3,13 @@ package com.shahuwang.jhttp;
 import com.shahuwang.jhttp.exceptions.NilTransport;
 import com.shahuwang.jhttp.exceptions.NilURL;
 import com.shahuwang.jhttp.exceptions.RequestURInReqeust;
+import org.apache.logging.log4j.Logger;
 
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Date;
+import java.util.Timer;
+import java.util.TimerTask;
 
 /**
  * Created by shahuwang on 2017/4/20.
@@ -16,7 +19,7 @@ public class Client {
     CheckRedirect checkRedirect;
     CookieJar jar;
     Duration timeout;
-
+    private Logger logger = Log.getLogger(this.getClass().getName());
     public Client(){
         this.timeout = Duration.ZERO;
     }
@@ -62,8 +65,19 @@ public class Client {
         if(deadline.getTime() != 0){
             req = forkReq(ireq, req);
         }
+        IRequestCancel rc = setRequestCancel(req, rt, deadline);
+        Response resp = null;
+        try{
+            resp = rt.roundTrip(req);
+        }catch (Exception e){ //TODO 这里需要修改下异常类型
+            logger.debug(e);
+            rc.stopTimer();
+            //TODO 这里需要raise
+        }
+        if(deadline.getTime() != 0){
 
-        return null; //TODO
+        }
+        return resp; //TODO
     }
 
     private String basicAuth(String username, String password){
@@ -76,5 +90,34 @@ public class Client {
             return ireq.clone();
         }
         return req;
+    }
+
+    private IRequestCancel setRequestCancel(Request req, RoundTripper rt, Date deadline){
+        if(deadline.getTime() == 0){
+            return new DefaultRequestCancel();
+        }
+        SyncChan<Boolean> cancelCh = new SyncChan<>();
+        SyncChan<Boolean> stopTimerCh = new SyncChan<>();
+        RequestCancel rc = new RequestCancel(stopTimerCh);
+        Runnable task = () -> {
+            Timer timer = new Timer();
+            timer.schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    rc.setTrue();
+                    doCancel(cancelCh);
+                    stopTimerCh.put(new Boolean(true));
+                }
+            }, deadline);
+            stopTimerCh.take();
+            timer.cancel();
+        };
+        Thread thread = new Thread(task);
+        thread.start();
+        return rc;
+    }
+
+    private void doCancel(SyncChan<Boolean> cancel){
+        cancel.put(new Boolean(true));
     }
 }
