@@ -8,4 +8,14 @@ public class CancelTimerBody implements IReadCloser{
     public CancelTimerBody(IReadCloser rc){
         this.rc = rc;
     }
+
+    @Override
+    public int read(byte[] p) {
+        return 0;
+    }
+
+    @Override
+    public void close() {
+
+    }
 }
